@@ -738,12 +738,20 @@ class S3PersonModel(S3Model):
                           2: T("female"),
                           3: T("male"),
                           }
+        if not settings.get_pr_hide_third_gender():
+            # Add the third gender option ("other" or "indeterminate",
+            # meaning neither female nor male, officially recognized
+            # in various countries)
+            pr_gender_opts[4] = T("other")
         pr_gender = S3ReusableField("gender", "integer",
                                     default = 1,
                                     label = T("Sex"),
-                                    represent = lambda opt: \
-                                                pr_gender_opts.get(opt, UNKNOWN_OPT),
-                                    requires = IS_IN_SET(pr_gender_opts, zero=None),
+                                    represent = S3Represent(options=pr_gender_opts,
+                                                            default=current.messages["NONE"],
+                                                            ),
+                                    requires = IS_PERSON_GENDER(pr_gender_opts,
+                                                                sort=True,
+                                                                ),
                                     )
 
         pr_impact_tags = {1: T("injured"),
@@ -885,6 +893,7 @@ class S3PersonModel(S3Model):
                                     "person_details.religion",
                                     "person_details.mother_name",
                                     "person_details.father_name",
+                                    "person_details.grandfather_name",
                                     "person_details.occupation",
                                     "person_details.company",
                                     "person_details.affiliations",
@@ -1012,6 +1021,8 @@ class S3PersonModel(S3Model):
                        hrm_competency = "person_id",
                        hrm_credential = "person_id",
                        hrm_training = "person_id",
+                       # Facilitated Trainings (Instructor)
+                       hrm_training_event = "person_id",
                        # Experience
                        hrm_experience = "person_id",
                        hrm_programme_hours = {"name": "hours",
@@ -1750,7 +1761,7 @@ class S3PersonModel(S3Model):
             if date_of_birth:
                 item["dob"] = date_of_birth.isoformat()
             gender = row.get("pr_person.gender", None)
-            if gender in (2, 3):
+            if gender in (2, 3, 4):
                 # 1 = unknown
                 item["sex"] = gender
             occupation = row.get("pr_person_details.occupation", None)
@@ -2567,13 +2578,14 @@ class S3PersonImageModel(S3Model):
                                               _title="%s|%s" % (T("URL"),
                                                                 T("The URL of the image file. If you don't upload an image file, then you must specify its location here.")))),
                           Field("type", "integer",
-                                requires = IS_IN_SET(pr_image_type_opts,
-                                                     zero=None),
                                 default = 1,
                                 label = T("Image Type"),
                                 represent = lambda opt: \
                                             pr_image_type_opts.get(opt,
-                                               current.messages.UNKNOWN_OPT)),
+                                               current.messages.UNKNOWN_OPT),
+                                requires = IS_IN_SET(pr_image_type_opts,
+                                                     zero=None),
+                                ),
                           s3_comments("description",
                                       label=T("Description"),
                                       comment = DIV(_class="tooltip",
@@ -3114,22 +3126,23 @@ class S3PersonDetailsModel(S3Model):
         UNKNOWN_OPT = messages.UNKNOWN_OPT
 
         pr_marital_status_opts = {
-            1:T("unknown"),
-            2:T("single"),
-            3:T("married"),
-            4:T("separated"),
-            5:T("divorced"),
-            6:T("widowed"),
-            9:T("other")
+            1: T("unknown"),
+            2: T("single"),
+            3: T("married"),
+            4: T("separated"),
+            5: T("divorced"),
+            6: T("widowed"),
+            9: T("other")
         }
 
         pr_marital_status = S3ReusableField("marital_status", "integer",
-                                            requires = IS_IN_SET(pr_marital_status_opts,
-                                                                 zero=None),
                                             default = 1,
                                             label = T("Marital Status"),
                                             represent = lambda opt: \
-                                                pr_marital_status_opts.get(opt, UNKNOWN_OPT))
+                                                pr_marital_status_opts.get(opt, UNKNOWN_OPT),
+                                            requires = IS_IN_SET(pr_marital_status_opts,
+                                                                 zero=None),
+                                            )
 
         pr_religion_opts = current.deployment_settings.get_L10n_religions()
 
@@ -3165,6 +3178,9 @@ class S3PersonDetailsModel(S3Model):
                                 writable = False,
                                 ),
                           pr_marital_status(),
+                          Field("number_children", "integer",
+                                label = T("Number of Children"),
+                                ),
                           Field("religion", length=128,
                                 label = T("Religion"),
                                 represent = lambda opt: \
@@ -3183,6 +3199,11 @@ class S3PersonDetailsModel(S3Model):
                           Field("mother_name",
                                 label = T("Name of Mother"),
                                 ),
+                          Field("grandfather_name",
+                                label = T("Name of Grandfather"),
+                                readable = False,
+                                writable = False,
+                                ),
                           Field("occupation", length=128, # Mayon Compatibility
                                 label = T("Profession"),
                                 ),
@@ -3193,6 +3214,14 @@ class S3PersonDetailsModel(S3Model):
                           Field("affiliations",
                                 label = T("Affiliations"),
                                 # @ToDo: Autofill from hrm_human_resource Volunteer Organisation
+                                ),
+                          Field("criminal_record", "boolean",
+                                label = T("Criminal Record"),
+                                represent = s3_yes_no_represent,
+                                ),
+                          Field("military_service", "boolean",
+                                label = T("Military Service"),
+                                represent = s3_yes_no_represent,
                                 ),
                           *s3_meta_fields())
 
@@ -4617,7 +4646,7 @@ class pr_PersonEntityRepresent(S3Represent):
         if self.show_type:
             etable = current.s3db.pr_pentity
             instance_type_nice = etable.instance_type.represent(instance_type)
-            instance_type_nice = " (%s)" % instance_type_nice
+            instance_type_nice = " (%s)" % s3_unicode(instance_type_nice)
         else:
             instance_type_nice = ""
 
@@ -5053,12 +5082,13 @@ class pr_Contacts(S3Method):
 
         # Retrieve the rows
         fields = ["id",
+                  "priority",
                   "contact_description",
                   "value",
                   "contact_method",
                   "comments",
                   ]
-        rows = resource.select(fields).rows
+        rows = resource.select(fields, orderby="pr_contact.priority").rows
 
         # Group by contact method and sort by priority
         from itertools import groupby
@@ -5086,6 +5116,7 @@ class pr_Contacts(S3Method):
         # Contact information by contact method
         opts = current.msg.CONTACT_OPTS
         action_buttons = self.action_buttons
+        inline_edit_hint = T("Click to edit")
         for method, contacts in groups:
 
             # Subtitle
@@ -5094,11 +5125,20 @@ class pr_Contacts(S3Method):
             # Individual Rows
             for contact in contacts:
 
+                priority = contact["pr_contact.priority"]
+                if priority:
+                    priority_title = "%s - %s" % (T("Priority"), inline_edit_hint)
+                    priority_field = SPAN(priority,
+                                          _class = "pr-contact-priority",
+                                          _title = priority_title,
+                                          )
+                else:
+                    priority_field = ""
+
                 contact_id = contact["pr_contact.id"]
                 value = contact["pr_contact.value"]
                 description = contact["pr_contact.contact_description"] or ""
 
-                inline_edit_hint = T("Click to edit")
                 title = SPAN(value,
                              _title = inline_edit_hint,
                              _class = "pr-contact-value",
@@ -5106,26 +5146,34 @@ class pr_Contacts(S3Method):
                 if description:
                     title = TAG[""](SPAN(description,
                                          _title = inline_edit_hint,
-                                         _class = "pr-contact-description"),
+                                         _class = "pr-contact-description",
+                                         ),
                                     ", ",
                                     title,
                                     )
+
                 comments = contact["pr_contact.comments"] or ""
 
                 actions = action_buttons(table, contact_id)
-                form.append(DIV(DIV(DIV(title,
-                                        _class="pr-contact-title",
-                                        ),
-                                    DIV(SPAN(comments,
-                                             _title = inline_edit_hint,
-                                             _class = "pr-contact-comments"),
-                                        _class = "pr-contact-subtitle",
+                form.append(DIV(DIV(priority_field,
+                                    DIV(DIV(title,
+                                            _class="pr-contact-title",
+                                            ),
+                                        DIV(SPAN(comments,
+                                                 _title = inline_edit_hint,
+                                                 _class = "pr-contact-comments",
+                                                 ),
+                                            _class = "pr-contact-subtitle",
+                                            ),
+                                        _class = "pr-contact-details",
                                         ),
                                     _class = "pr-contact-data medium-9 columns",
                                     ),
+
                                 actions,
                                 data = {
                                     "id": contact_id,
+                                    "priority": priority,
                                     "value": value,
                                     "description": description,
                                     "comments": comments,
@@ -5159,6 +5207,7 @@ class pr_Contacts(S3Method):
                               "relationship",
                               "address",
                               "phone",
+                              "comments",
                               )
                     if table[f].readable]
         fields.insert(0, "id")
@@ -5180,18 +5229,60 @@ class pr_Contacts(S3Method):
 
         # Individual rows
         readable_fields = fields[1:]
+        action_buttons = self.action_buttons
+        inline_edit_hint = T("Click to edit")
         for row in rows:
-            data = (row["pr_contact_emergency.%s" % f] or ""
-                    for f in readable_fields)
-            record_id = row["pr_contact_emergency.id"]
-            form.append(DIV(DIV(", ".join(data),
-                                _class="pr-emergency-data medium-9 columns",
+            contact_id = row["pr_contact_emergency.id"]
+
+            # Render description and data
+            data = {"id": contact_id}
+            description = TAG[""](SPAN(row["pr_contact_emergency.name"],
+                                       _title = inline_edit_hint,
+                                       _class = "pr-emergency-name",
+                                       ),
+                                  )
+            append = description.append
+            for fieldname in ("relationship", "address", "phone"):
+                if fieldname in readable_fields:
+                    value = row["pr_contact_emergency.%s" % fieldname]
+                    if value:
+                        data[fieldname] = s3_unicode(value)
+                        editable = SPAN(value,
+                                        _title = inline_edit_hint,
+                                        _class = "pr-emergency-%s" % fieldname,
+                                        )
+                        if fieldname == "relationship":
+                            append(" (")
+                            append(editable)
+                            append(")")
+                        else:
+                            append(", ")
+                            append(editable)
+
+            # Render comments
+            if "comments" in readable_fields:
+                comments = row["pr_contact_emergency.comments"] or ""
+                if comments:
+                    data["comments"] = s3_unicode(comments)
+            else:
+                comments = ""
+
+            actions = action_buttons(table, contact_id)
+            form.append(DIV(DIV(DIV(description,
+                                    _class="pr-contact-title",
+                                    ),
+                                DIV(SPAN(comments,
+                                         _title = inline_edit_hint,
+                                         _class = "pr-emergency-comments"),
+                                    _class = "pr-contact-subtitle",
+                                    ),
+                                _class = "pr-emergency-data medium-9 columns",
                                 ),
-                            self.action_buttons(table, record_id),
-                            data = {"id": record_id,
-                                    },
+                            actions,
+                            data = data,
                             _class="pr-emergency-contact row",
                             ))
+
         return form
 
 # =============================================================================
@@ -7061,6 +7152,9 @@ class pr_PersonListLayout(S3DataListLayout):
                     icon = "female"
                 elif gender == 3:
                     icon = "male"
+                # @todo: support "other" gender
+                #elif gender == 4:
+                    #icon = ?
                 else:
                     return None # don't render if unknown
             else:

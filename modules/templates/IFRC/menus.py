@@ -39,6 +39,14 @@ class S3MainMenu(default.S3MainMenu):
 
         T = current.T
 
+        ADMIN = current.session.s3.system_roles.ADMIN
+
+        def outreach(item):
+
+            root_org = current.auth.root_org_name()
+            return root_org == "New Zealand Red Cross" or \
+                   root_org is None and current.auth.s3_has_role(ADMIN)
+
         return [
             homepage("gis")(
             ),
@@ -89,6 +97,7 @@ class S3MainMenu(default.S3MainMenu):
             homepage("project")(
                 MM("Projects", c="project", f="project"),
                 MM("Communities", c="project", f="location"),
+                MM("Outreach", c="po", f="index", check = outreach),
             ),
             homepage("vulnerability")(
                 MM("Map", c="vulnerability", f="index"),
@@ -326,7 +335,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
                         M("Search Members", f="group_membership"),
                         M("Import", f="group_membership", m="import"),
                     ),
-                    M("National Societies", c="org", 
+                    M("National Societies", c="org",
                                             f="organisation",
                                             vars=red_cross_filter,
                       check=manager_mode)(
@@ -395,13 +404,13 @@ class S3OptionsMenu(default.S3OptionsMenu):
                     #    M("Create", m="create"),
                     #),
                     #M("My Profile", c="hrm", f="person",
-                    #  check=personal_mode, vars=dict(mode="personal")),
+                    #  check=personal_mode, vars=dict(access="personal")),
                     # This provides the link to switch to the manager mode:
                     M("Human Resources", c="hrm", f="index",
                       check=[personal_mode, is_org_admin]),
                     # This provides the link to switch to the personal mode:
                     #M("Personal Profile", c="hrm", f="person",
-                    #  check=manager_mode, vars=dict(mode="personal"))
+                    #  check=manager_mode, vars=dict(access="personal"))
                 )
 
     # -------------------------------------------------------------------------
@@ -410,7 +419,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
         # Same as HRM
         return self.hrm()
-    
+
     # -------------------------------------------------------------------------
     @staticmethod
     def vol():
@@ -438,7 +447,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
         not_vnrc = lambda i: auth.root_org_name() != "Viet Nam Red Cross"
         skills_menu = lambda i: auth.root_org_name() in ("Afghan Red Crescent Society",
-                                                         "Indonesian Red Cross Society (Pelang Merah Indonesia)",
+                                                         "Indonesian Red Cross Society (Palang Merah Indonesia)",
                                                          "Viet Nam Red Cross",
                                                          )
 
@@ -532,17 +541,17 @@ class S3OptionsMenu(default.S3OptionsMenu):
                         M("Training Report", f="training", m="report"),
                     ),
                     #M("My Profile", f="person",
-                    #  check=personal_mode, vars=dict(mode="personal")),
+                    #  check=personal_mode, vars=dict(access="personal")),
                     M("My Tasks", f="task",
                       check=[personal_mode, show_tasks],
-                      vars=dict(mode="personal",
+                      vars=dict(access="personal",
                                 mine=1)),
                     # This provides the link to switch to the manager mode:
                     M("Volunteer Management", f="index",
                       check=[personal_mode, is_org_admin]),
                     # This provides the link to switch to the personal mode:
                     #M("Personal Profile", f="person",
-                    #  check=manager_mode, vars=dict(mode="personal"))
+                    #  check=manager_mode, vars=dict(access="personal"))
                 )
 
     # -------------------------------------------------------------------------

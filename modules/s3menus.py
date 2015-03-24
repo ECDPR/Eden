@@ -920,7 +920,7 @@ class S3OptionsMenu(object):
                     # Currently not got geocoding support
                     #M("Bulk Uploader", c="doc", f="bulk_upload"),
                     M("Locations", c="gis", f="location")(
-                        M("Create Location", m="create"),
+                        M("Create", m="create"),
                         #M("Create Location Group", m="create", vars={"group": 1}),
                         M("Import from CSV", m="import", restrict=[MAP_ADMIN]),
                         M("Import from OpenStreetMap", m="import_poi",
@@ -1041,13 +1041,13 @@ class S3OptionsMenu(object):
                         M("Training Report", f="training", m="report"),
                     ),
                     M("Personal Profile", f="person",
-                      check=personal_mode, vars=dict(mode="personal")),
+                      check=personal_mode, vars=dict(access="personal")),
                     # This provides the link to switch to the manager mode:
                     M("Staff Management", f="index",
                       check=[personal_mode, is_org_admin]),
                     # This provides the link to switch to the personal mode:
                     M("Personal Profile", f="person",
-                      check=manager_mode, vars=dict(mode="personal"))
+                      check=manager_mode, vars=dict(access="personal"))
                 )
 
     # -------------------------------------------------------------------------
@@ -1140,17 +1140,17 @@ class S3OptionsMenu(object):
                         M("Training Report", f="training", m="report"),
                     ),
                     M("My Profile", f="person",
-                      check=personal_mode, vars=dict(mode="personal")),
+                      check=personal_mode, vars=dict(access="personal")),
                     M("My Tasks", f="task",
                       check=[personal_mode, show_tasks],
-                      vars=dict(mode="personal",
+                      vars=dict(access="personal",
                                 mine=1)),
                     # This provides the link to switch to the manager mode:
                     M("Volunteer Management", f="index",
                       check=[personal_mode, is_org_admin]),
                     # This provides the link to switch to the personal mode:
                     M("Personal Profile", f="person",
-                      check=manager_mode, vars=dict(mode="personal"))
+                      check=manager_mode, vars=dict(access="personal"))
                 )
 
     # -------------------------------------------------------------------------
@@ -1372,12 +1372,12 @@ class S3OptionsMenu(object):
 
         return M(c="member")(
                     M("Members", f="membership", m="summary")(
-                        M("Create Member", m="create"),
+                        M("Create", m="create"),
                         #M("Report", m="report"),
                         M("Import", f="person", m="import"),
                     ),
                     M("Membership Types", f="membership_type")(
-                        M("Create Membership Type", m="create"),
+                        M("Create", m="create"),
                         #M("Import", m="import"),
                     ),
                 )
@@ -1488,6 +1488,20 @@ class S3OptionsMenu(object):
                     M("Patients", f="patient")(
                         M("Create", m="create"),
                     )
+                )
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def po():
+        """ PO / Population Outreach """
+
+        return M(c="po")(
+                    M("Households", f="household", m="summary")(
+                        M("Create", m="create"),
+                    ),
+                    M("Areas", f="area")(
+                        M("Create", m="create"),
+                    ),
                 )
 
     # -------------------------------------------------------------------------

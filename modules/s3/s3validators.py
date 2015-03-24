@@ -53,6 +53,7 @@ __all__ = ("single_phone_number_pattern",
            "IS_ONE_OF_EMPTY",
            "IS_ONE_OF_EMPTY_SELECT",
            "IS_NOT_ONE_OF",
+           "IS_PERSON_GENDER",
            "IS_PHONE_NUMBER",
            "IS_PROCESSED_IMAGE",
            "IS_SITE_SELECTOR",
@@ -82,7 +83,8 @@ from gluon import *
 from gluon.storage import Storage
 from gluon.validators import Validator
 
-from s3utils import S3DateTime, s3_orderby_fields, s3_unicode, s3_validate
+from s3datetime import S3DateTime
+from s3utils import s3_orderby_fields, s3_unicode, s3_validate
 
 def translate(text):
     if text is None:
@@ -2477,23 +2479,21 @@ class IS_UTC_OFFSET(Validator):
             passes through.
     """
 
-    def __init__(self,
-                 error_message="invalid UTC offset!"
-                ):
+    def __init__(self, error_message="invalid UTC offset!"):
+
         self.error_message = error_message
 
     # -------------------------------------------------------------------------
     def __call__(self, value):
 
         if value and isinstance(value, str):
-            _offset_str = value.strip()
 
-            offset = S3DateTime.get_offset_value(_offset_str)
-
-            if offset is not None and offset > -86340 and offset < 86340:
-                # Add a leading 'UTC ',
-                # otherwise leading '+' and '0' will be stripped away by web2py
-                return ("UTC " + _offset_str[-5:], None)
+            offset = S3DateTime.get_offset_value(value)
+            if offset is not None:
+                hours, seconds = divmod(abs(offset), 3600)
+                minutes = int(seconds / 60)
+                sign = "-" if offset < 0 else "+"
+                return ("%s%02d%02d" % (sign, hours, minutes), None)
 
         return (value, self.error_message)
 
@@ -2568,10 +2568,9 @@ class IS_UTC_DATETIME(Validator):
             self.utc_offset = utc_offset
         if self.utc_offset is None:
             self.utc_offset = current.session.s3.utc_offset
-        validate = IS_UTC_OFFSET()
-        offset, error = validate(self.utc_offset)
+        offset, error = IS_UTC_OFFSET()(self.utc_offset)
         if error:
-            self.utc_offset = "UTC +0000" # fallback to UTC
+            self.utc_offset = "+0000" # fallback to UTC
         else:
             self.utc_offset = offset
         delta = S3DateTime.get_offset_value(self.utc_offset)
@@ -2586,7 +2585,7 @@ class IS_UTC_DATETIME(Validator):
         if len(val) > 5 and val[-5] in ("+", "-") and val[-4:].isdigit():
             # UTC offset specified in dtstr
             dtstr = val[0:-5].strip()
-            utc_offset = "UTC %s" % val[-5:]
+            utc_offset = val[-5:]
         else:
             # use default UTC offset
             dtstr = val
@@ -2920,6 +2919,21 @@ class IS_TIME_INTERVAL_WIDGET(Validator):
             return (0, None)
         seconds = val * mul
         return (seconds, None)
+
+# =============================================================================
+class IS_PERSON_GENDER(IS_IN_SET):
+    """
+        Special validator for pr_person.gender and derivates,
+        accepts the "O" option even if it's not in the set.
+    """
+
+    def __call__(self, value):
+
+        if value == 4:
+            # 4 = other, always accepted even if hidden
+            return value, None
+        else:
+            return super(IS_PERSON_GENDER, self).__call__(value)
 
 # =============================================================================
 class IS_PHONE_NUMBER(Validator):

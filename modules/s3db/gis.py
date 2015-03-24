@@ -703,7 +703,7 @@ class S3LocationModel(S3Model):
           If the record is a duplicate then it will set the item method to update
 
           Rules for finding a duplicate:
-           - Don't do deduplication if there is no level
+           - If there is no level, then deduplicate based on the address
            - Look for a record with the same name, ignoring case
            - If no match, also check name_l10n
            - If parent exists in the import, the same parent
@@ -715,22 +715,47 @@ class S3LocationModel(S3Model):
                    - make a deployment_setting for relevant function?
         """
 
-        table = item.table
         data = item.data
-        name = data.get("name", None)
+        name = data.get("name")
 
         if not name:
             return
 
-        level = data.get("level", None)
+        level = data.get("level")
         if not level:
-            # Don't deduplicate precise locations as hard to ensure these have unique names
+            address = data.get("addr_street")
+            if not address:
+                # Don't deduplicate precise locations as hard to ensure these have unique names
+                return
+            table = item.table
+            query = (table.addr_street == address) & \
+                    (table.deleted != True)
+            postcode = data.get("addr_postcode")
+            if postcode:
+                query &= (table.addr_postcode == postcode)
+            parent = data.get("parent")
+            if parent:
+                query &= (table.parent == parent)
+            duplicate = current.db(query).select(table.id,
+                                                 limitby=(0, 1)).first()
+            if duplicate:
+                item.id = duplicate.id
+                item.method = item.METHOD.UPDATE
             return
 
         # Don't try to update Countries
         if level == "L0":
             item.method = None
+            item.skip = True
             return
+
+        MAP_ADMIN = current.auth.s3_has_role(current.session.s3.system_roles.MAP_ADMIN)
+        def skip(level, location_id):
+            if not MAP_ADMIN:
+                return not gis_hierarchy_editable(level, location_id)
+            return False
+
+        table = item.table
 
         code = current.deployment_settings.get_gis_lookup_code()
         if code:
@@ -741,6 +766,7 @@ class S3LocationModel(S3Model):
                     (kv_table.location_id == table.id)
             duplicate = current.db(query).select(table.id,
                                                  table.name,
+                                                 table.level,
                                                  orderby=~table.end_date,
                                                  limitby=(0, 1)).first()
 
@@ -750,11 +776,12 @@ class S3LocationModel(S3Model):
                 data.name = duplicate.name # Don't update the name with the code
                 item.id = duplicate.id
                 item.method = item.METHOD.UPDATE
+                item.skip = skip(duplicate.level, duplicate.id)
                 return
 
-        parent = data.get("parent", None)
-        start_date = data.get("start_date", None)
-        end_date = data.get("end_date", None)
+        parent = data.get("parent")
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
 
         # @ToDo: check the the lat and lon if they exist?
         #lat = "lat" in data and data.lat
@@ -774,6 +801,7 @@ class S3LocationModel(S3Model):
                       (table.end_date == None))
 
         duplicate = current.db(query).select(table.id,
+                                             table.level,
                                              orderby=~table.end_date,
                                              limitby=(0, 1)).first()
         if duplicate:
@@ -781,6 +809,7 @@ class S3LocationModel(S3Model):
             #current.log.debug("Location Match")
             item.id = duplicate.id
             item.method = item.METHOD.UPDATE
+            item.skip = skip(duplicate.level, duplicate.id)
             return
 
         elif current.deployment_settings.get_L10n_translate_gis_location():
@@ -798,6 +827,7 @@ class S3LocationModel(S3Model):
 
             duplicate = current.db(query).select(table.id,
                                                  table.name,
+                                                 table.level,
                                                  orderby=~table.end_date,
                                                  limitby=(0, 1)).first()
             if duplicate:
@@ -806,6 +836,7 @@ class S3LocationModel(S3Model):
                 data.name = duplicate.name # Don't update the name
                 item.id = duplicate.id
                 item.method = item.METHOD.UPDATE
+                item.skip = skip(duplicate.level, duplicate.id)
             else:
                 # @ToDo: Import Log
                 #current.log.debug("No Match", name)
@@ -5581,15 +5612,19 @@ class gis_LocationRepresent(S3Represent):
                     represent = name or "ID: %s" % row.id
 
                 if has_lat_lon and self.show_marker_icon:
-                    popup = current.deployment_settings.get_gis_popup_location_link()
-                    script = '''s3_viewMap(%i,%i,'%s');return false''' % (row.id,
-                                                                          self.iheight,
-                                                                          popup)
+                    if not self.show_link:
+                        popup = current.deployment_settings.get_gis_popup_location_link()
+                        script = '''s3_viewMap(%i,%i,'%s');return false''' % (row.id,
+                                                                              self.iheight,
+                                                                              popup)
+                    else:
+                        # Already inside a link with onclick-script
+                        script = None
                     represent = SPAN(s3_unicode(represent),
-                                     I(_class="icon icon-map-marker",
-                                       _title=self.lat_lon_represent(row),
-                                       _onclick=script,
-                                       ),
+                                     ICON("map-marker",
+                                          _title=self.lat_lon_represent(row),
+                                          _onclick=script,
+                                          ),
                                      _class="gis-display-feature",
                                      )
                     return represent

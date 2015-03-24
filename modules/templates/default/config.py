@@ -155,7 +155,7 @@ def config(settings):
     # Uncomment to Hide the language toolbar
     #settings.L10n.display_toolbar = False
     # Default timezone for users
-    #settings.L10n.utc_offset = "UTC +0000"
+    #settings.L10n.utc_offset = "+0000"
     # Uncomment these to use US-style dates in English
     #settings.L10n.date_format = "%m-%d-%Y"
     #settings.L10n.time_format = "%H:%M:%S"
@@ -477,6 +477,8 @@ def config(settings):
     # Persons
     # Uncomment to allow person imports to match even without email addresses
     #settings.pr.import_update_requires_email = False
+    # Uncomment this to enable support for third gender
+    #settings.pr.hide_third_gender = False
     # Uncomment to a fuzzy search for duplicates in the new AddPersonWidget2
     #settings.pr.lookup_duplicates = True
     # Uncomment to hide fields in S3AddPersonWidget[2]
@@ -565,6 +567,8 @@ def config(settings):
     #settings.hrm.email_required = False
     # Uncomment to allow Staff & Volunteers to be registered without an Organisation
     #settings.hrm.org_required = False
+    # Uncomment to if their are only Staff & Volunteers from a single Organisation with no Branches
+    #settings.hrm.multiple_orgs = False
     # Uncomment to disable the 'Send Message' action button
     #settings.hrm.compose_button = False
     # Uncomment to allow HR records to be deletable rather than just marking them as obsolete
@@ -624,6 +628,8 @@ def config(settings):
     #settings.hrm.teams = False
     # Uncomment to disable the use of HR Trainings
     #settings.hrm.use_trainings = False
+    # Uncomment this to configure tracking of internal/external training instructors
+    #settings.hrm.training_instructors = "external"
     # Uncomment to use activity types in experience record, specify as {"code":"label", ...}
     #settings.hrm.activity_types = {"rdrt": "RDRT Mission"}
 
@@ -790,6 +796,8 @@ def config(settings):
     #settings.project.projects = True
     # Uncomment this to disable Sectors in projects
     #settings.project.sectors = False
+    # Uncomment this to enable Programmes in projects
+    #settings.project.programmes = True
     # Uncomment this to use Tags in Tasks
     #settings.project.task_tag = True
     # Uncomment this to enable Themes in 3W projects
@@ -932,10 +940,10 @@ def config(settings):
             module_type = 2,
         )),
         ("cms", Storage(
-        name_nice = T("Content Management"),
-        #description = "Content Management System",
-        restricted = True,
-        module_type = 10,
+            name_nice = T("Content Management"),
+            #description = "Content Management System",
+            restricted = True,
+            module_type = 10,
         )),
         ("doc", Storage(
             name_nice = T("Documents"),
@@ -1111,6 +1119,12 @@ def config(settings):
         #("patient", Storage(
         #    name_nice = T("Patient Tracking"),
         #    #description = "Tracking of Patients",
+        #    restricted = True,
+        #    module_type = 10
+        #)),
+        #("po", Storage(
+        #    name_nice = T("Population Outreach"),
+        #    #description = "Population Outreach",
         #    restricted = True,
         #    module_type = 10
         #)),

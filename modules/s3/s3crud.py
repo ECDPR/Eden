@@ -594,7 +594,7 @@ class S3CRUD(S3Method):
 
             # If this is a single-component and no record exists,
             # try to create one if the user is permitted
-            if not record_id and r.component and not r.multiple:
+            if not record_id and r.component and not r.component.multiple:
                 authorised = self._permitted(method="create")
                 if authorised:
                     # This should become Native
@@ -625,12 +625,17 @@ class S3CRUD(S3Method):
 
             # Item
             if record_id:
-                item = self.sqlform(request=request,
-                                    resource=resource,
-                                    record_id=record_id,
-                                    readonly=True,
-                                    subheadings=subheadings,
-                                    format=representation)
+                try:
+                    item = self.sqlform(request=request,
+                                        resource=resource,
+                                        record_id=record_id,
+                                        readonly=True,
+                                        subheadings=subheadings,
+                                        format=representation)
+                except HTTP, e:
+                    message = current.ERROR.BAD_RECORD \
+                              if e.status == 404 else e.message
+                    r.error(e.status, message)
             else:
                 item = DIV(crud_string(tablename, "msg_list_empty"),
                            _class="empty")
@@ -887,15 +892,20 @@ class S3CRUD(S3Method):
                 self._default_cancel_button(r)
 
             # Get the form
-            form = self.sqlform(request=self.request,
-                                resource=resource,
-                                record_id=record_id,
-                                onvalidation=onvalidation,
-                                onaccept=onaccept,
-                                message=message,
-                                link=link,
-                                subheadings=subheadings,
-                                format=representation)
+            try:
+                form = self.sqlform(request=self.request,
+                                    resource=resource,
+                                    record_id=record_id,
+                                    onvalidation=onvalidation,
+                                    onaccept=onaccept,
+                                    message=message,
+                                    link=link,
+                                    subheadings=subheadings,
+                                    format=representation)
+            except HTTP, e:
+                message = current.ERROR.BAD_RECORD \
+                          if e.status == 404 else e.message
+                r.error(e.status, message)
 
             # Navigate-away confirmation
             if self.settings.navigate_away_confirm:
@@ -2353,7 +2363,7 @@ class S3CRUD(S3Method):
         # List button
         if "list" in buttons:
             LIST_BTN = "list_btn"
-            if not r.component or r.multiple:
+            if not r.component or r.component.multiple:
                 if LIST_BTN in custom_crud_buttons:
                     btn = crud_button(custom=custom_crud_buttons[LIST_BTN])
                 else:
@@ -2371,7 +2381,7 @@ class S3CRUD(S3Method):
         # Summary button
         if "summary" in buttons:
             SUMMARY_BTN = "summary_btn"
-            if not r.component or r.multiple:
+            if not r.component or r.component.multiple:
                 if SUMMARY_BTN in custom_crud_buttons:
                     btn = crud_button(custom=custom_crud_buttons[SUMMARY_BTN])
                 else:

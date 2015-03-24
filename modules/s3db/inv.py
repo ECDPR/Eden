@@ -3273,16 +3273,16 @@ def inv_rheader(r):
         tabs = [(T("Basic Details"), None),
                 #(T("Contact Data"), "contact"),
                 ]
+        permit = current.auth.s3_has_permission
         settings = current.deployment_settings
         if settings.has_module("hrm"):
             STAFF = settings.get_hrm_staff_label()
             tabs.append((STAFF, "human_resource"))
-            permit = current.auth.s3_has_permission
             if permit("create", "hrm_human_resource_site") and \
                permit("update", tablename, r.id):
                 tabs.append((T("Assign %(staff)s") % dict(staff=STAFF), "assign"))
-        if settings.has_module("asset"):
-            tabs.insert(6,(T("Assets"), "asset"))
+        if settings.has_module("asset") and permit("read", "asset_asset"):
+            tabs.insert(6, (T("Assets"), "asset"))
         tabs = tabs + s3db.inv_tabs(r)
         if settings.has_module("req"):
             tabs = tabs + s3db.req_tabs(r)
@@ -4099,7 +4099,8 @@ class S3InventoryAdjustModel(S3Model):
                            requires = IS_EMPTY_OR(IS_IN_SET(inv_item_status_opts)),
                            represent = lambda opt: \
                                        inv_item_status_opts.get(opt, UNKNOWN_OPT),
-                           default = 0,),
+                           default = 0,
+                           ),
                      s3_date("expiry_date",
                              label = T("Expiry Date")),
                      Field("bin", "string", length=16,
@@ -4111,7 +4112,9 @@ class S3InventoryAdjustModel(S3Model):
                      organisation_id(name = "old_owner_org_id",
                                      label = T("Current Owned By (Organization/Branch)"),
                                      ondelete = "SET NULL",
-                                     writable = False),
+                                     writable = False,
+                                     comment = None,
+                                     ),
                      # Organisation that owns this item now
                      organisation_id(name = "new_owner_org_id",
                                      label = T("Transfer Ownership To (Organization/Branch)"),

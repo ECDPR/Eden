@@ -108,6 +108,7 @@ from gluon.languages import lazyT
 from gluon.sqlhtml import *
 from gluon.storage import Storage
 
+from s3datetime import S3DateTime
 from s3utils import *
 from s3validators import *
 
@@ -1618,10 +1619,17 @@ class S3DateTimeWidget(FormWidget):
 
         separator = settings.get_L10n_datetime_separator()
 
+        # Year range
+        pyears, fyears = 10, 10
+        if "min" in opts or "past" in opts:
+            pyears = abs(earliest.year - now.year)
+        if "max" in opts or "future" in opts:
+            fyears = abs(latest.year - now.year)
+        year_range = "%s:%s" % (opts.get("min_year", "-%s" % pyears),
+                                opts.get("max_year", "+%s" % fyears))
+
         # Other options
         firstDOW = settings.get_L10n_firstDOW()
-        year_range = "%s:%s" % (opts.get("min_year", "-10"),
-                                opts.get("max_year", "+10"))
 
         # Boolean options
         getopt = lambda opt, default: opts.get(opt, default) and "true" or "false"
@@ -6266,6 +6274,8 @@ class S3HierarchyWidget(FormWidget):
                  represent = None,
                  multiple = True,
                  leafonly = True,
+                 cascade = False,
+                 bulk_select = False,
                  filter = None,
                  columns = None,
                  ):
@@ -6277,8 +6287,16 @@ class S3HierarchyWidget(FormWidget):
             @param represent: alternative representation method (falls back
                               to the field's represent-method)
             @param multiple: allow selection of multiple options
-            @param leafonly: True = only leaf nodes can be selected
-                             False = any nodes to be selected independently
+            @param leafonly: True = only leaf nodes can be selected (with
+                             multiple=True: selection of a parent node will
+                             automatically select all leaf nodes of that
+                             branch)
+                             False = any nodes can be selected independently
+            @param cascade: automatic selection of children when selecting
+                            a parent node (if leafonly=False, otherwise
+                            this is the standard behavior!), requires
+                            multiple=True
+            @param bulk_select: provide option to select/deselect all nodes
             @param filter: filter query for the lookup table
             @param columns: set the columns width class for Foundation forms
         """
@@ -6286,9 +6304,13 @@ class S3HierarchyWidget(FormWidget):
         self.lookup = lookup
         self.represent = represent
         self.filter = filter
+
         self.multiple = multiple
         self.leafonly = leafonly
+        self.cascade = cascade
+
         self.columns = columns
+        self.bulk_select = bulk_select
 
     # -------------------------------------------------------------------------
     def __call__(self, field, value, **attr):
@@ -6343,13 +6365,36 @@ class S3HierarchyWidget(FormWidget):
             attr["s3cols"] = self.columns
 
         # Generate the widget
+        settings = current.deployment_settings
+        cascade_option_in_tree = settings.get_ui_hierarchy_cascade_option_in_tree()
+
+        if self.multiple and self.bulk_select and \
+           not cascade_option_in_tree:
+            # Render bulk-select options as separate header
+            header = DIV(SPAN(A("Select All",
+                                _class="s3-hierarchy-select-all",
+                                ),
+                              " | ",
+                              A("Deselect All",
+                                _class="s3-hierarchy-deselect-all",
+                                ),
+                              _class="s3-hierarchy-bulkselect",
+                              ),
+                         _class="s3-hierarchy-header",
+                         )
+        else:
+            header = ""
         widget = DIV(INPUT(_type = "hidden",
                            _multiple = "multiple",
                            _name = name,
                            _class = "s3-hierarchy-input",
                            requires = self.parse),
-                     DIV(h.html("%s-tree" % widget_id),
-                         _class = "s3-hierarchy-tree"),
+                     DIV(header,
+                         DIV(h.html("%s-tree" % widget_id),
+                             _class = "s3-hierarchy-tree",
+                             ),
+                         _class = "s3-hierarchy-wrapper",
+                         ),
                      **attr)
         widget.add_class("s3-hierarchy-widget")
 
@@ -6369,7 +6414,7 @@ class S3HierarchyWidget(FormWidget):
                 append(v)
 
         # Custom theme
-        theme = current.deployment_settings.get_ui_hierarchy_theme()
+        theme = settings.get_ui_hierarchy_theme()
 
         if s3.debug:
             script = "%s/jstree.js" % script_dir
@@ -6395,18 +6440,28 @@ class S3HierarchyWidget(FormWidget):
                        "selectedText": str(T("# selected")),
                        "noneSelectedText": str(T("Select")),
                        "noOptionsText": str(T("No options available")),
+                       "selectAllText": str(T("Select All")),
+                       "deselectAllText": str(T("Deselect All")),
                        }
+
         # Only include non-default options
         if not self.multiple:
             widget_opts["multiple"] = False
         if not leafonly:
             widget_opts["leafonly"] = False
+        if self.cascade:
+            widget_opts["cascade"] = True
+        if self.bulk_select:
+            widget_opts["bulkSelect"] = True
+        if not cascade_option_in_tree:
+            widget_opts["cascadeOptionInTree"] = False
         icons = theme.get("icons", False)
         if icons:
             widget_opts["icons"] = icons
         stripes = theme.get("stripes", True)
         if not stripes:
             widget_opts["stripes"] = stripes
+
 
         script = '''$('#%(widget_id)s').hierarchicalopts(%(widget_opts)s)''' % \
                  {"widget_id": widget_id,
@@ -6435,8 +6490,8 @@ class S3HierarchyWidget(FormWidget):
             value = json.loads(value)
         except ValueError:
             return default, None
-        if not self.multiple and value and isinstance(value, list):
-            value = value[0]
+        if not self.multiple and isinstance(value, list):
+            value = value[0] if value else None
         return value, None
 
 # =============================================================================
@@ -7604,6 +7659,7 @@ class ICON(I):
         "font-awesome": {
             "_base": "icon",
             "active": "icon-check",
+            "activity": "icon-tag",
             "add": "icon-plus",
             "arrow-down": "icon-arrow-down",
             "attachment": "icon-paper-clip",
@@ -7615,7 +7671,10 @@ class ICON(I):
             "calendar": "icon-calendar",
             "certificate": "icon-certificate",
             "comment-alt": "icon-comment-alt",
+            "commit": "icon-truck",
             "delete": "icon-trash",
+            "deploy": "icon-plus",
+            "deployed": "icon-ok",
             "down": "icon-caret-down",
             "edit": "icon-edit",
             "exclamation": "icon-exclamation",
@@ -7629,9 +7688,11 @@ class ICON(I):
             "inactive": "icon-check-empty",
             "link": "icon-external-link",
             "list": "icon-list",
+            "location": "icon-globe",
             "mail": "icon-envelope-alt",
             "map-marker": "icon-map-marker",
             "offer": "icon-truck",
+            "organisation": "icon-sitemap",
             "other": "icon-circle",
             "paper-clip": "icon-paper-clip",
             "phone": "icon-phone",
@@ -7640,8 +7701,10 @@ class ICON(I):
             "radio": "icon-microphone",
             "remove": "icon-remove",
             "request": "icon-flag",
+            "responsibility": "icon-briefcase",
             "rss": "icon-rss",
-            "sitemap": "icon-sitemap",
+            "sent": "icon-ok",
+            "site": "icon-home",
             "skype": "icon-skype",
             "star": "icon-star",
             "table": "icon-table",
@@ -7649,12 +7712,12 @@ class ICON(I):
             "tags": "icon-tags",
             "tasks": "icon-tasks",
             "time": "icon-time",
-            "trash": "icon-trash",
             "truck": "icon-truck",
             "twitter": "icon-twitter",
+            "unsent": "icon-remove",
             "up": "icon-caret-up",
+            "upload": "icon-upload-alt",
             "user": "icon-user",
-            "wrench": "icon-wrench",
             "zoomin": "icon-zoomin",
             "zoomout": "icon-zoomout",
         },
@@ -7662,6 +7725,7 @@ class ICON(I):
         #"font-awesome4": {
             #"_base": "fa",
             #"active": "fa-check",
+            #"activity": "fa-tag",
             #"add": "fa-plus",
             #"arrow-down": "fa-arrow-down",
             #"attachment": "fa-paper-clip",
@@ -7673,7 +7737,10 @@ class ICON(I):
             #"calendar": "fa-calendar",
             #"certificate": "fa-certificate",
             #"comment-alt": "fa-comment-o",
+            #"commit": "fa-truck",
             #"delete": "fa-trash",
+            #"deploy": "fa-plus",
+            #"deployed": "fa-check",
             #"down": "fa-caret-down",
             #"edit": "fa-edit",
             #"exclamation": "fa-exclamation",
@@ -7687,9 +7754,11 @@ class ICON(I):
             #"inactive": "fa-check-empty",
             #"link": "fa-external-link",
             #"list": "fa-list",
+            #"location": "fa-globe",
             #"mail": "fa-envelope-o",
             #"map-marker": "fa-map-marker",
             #"offer": "fa-truck",
+            #"organisation": "fa-institution",
             #"other": "fa-circle",
             #"paper-clip": "fa-paper-clip",
             #"phone": "fa-phone",
@@ -7698,8 +7767,10 @@ class ICON(I):
             #"radio": "fa-microphone",
             #"remove": "fa-remove",
             #"request": "fa-flag",
+            #"responsibility": "fa-briefcase",
             #"rss": "fa-rss",
-            #"sitemap": "fa-sitemap",
+            #"sent": "fa-check",
+            #"site": "fa-home",
             #"skype": "fa-skype",
             #"star": "fa-star",
             #"table": "fa-table",
@@ -7707,17 +7778,18 @@ class ICON(I):
             #"tags": "fa-tags",
             #"tasks": "fa-tasks",
             #"time": "fa-time",
-            #"trash": "fa-trash",
             #"truck": "fa-truck",
             #"twitter": "fa-twitter",
+            #"unsent": "fa-times",
             #"up": "fa-caret-up",
+            #"upload": "fa-upload",
             #"user": "fa-user",
-            #"wrench": "fa-wrench",
             #"zoomin": "fa-zoomin",
             #"zoomout": "fa-zoomout",
         #},
         "foundation": {
             "active": "fi-check",
+            "activity": "fi-price-tag",
             "add": "fi-plus",
             "arrow-down": "fi-arrow-down",
             "attachment": "fi-paperclip",
@@ -7728,7 +7800,10 @@ class ICON(I):
             "calendar": "fi-calendar",
             "certificate": "fi-burst",
             "comment-alt": "fi-comment",
+            "commit": "fi-check",
             "delete": "fi-trash",
+            "deploy": "fi-plus",
+            "deployed": "fi-check",
             "edit": "fi-page-edit",
             "exclamation": "fi-alert",
             "facebook": "fi-social-facebook",
@@ -7741,9 +7816,11 @@ class ICON(I):
             "inactive": "fi-x",
             "link": "fi-web",
             "list": "fi-list",
+            "location": "fi-map",
             "mail": "fi-mail",
             "map-marker": "fi-marker",
             "offer": "fi-burst",
+            "organisation": "fi-torsos-all",
             "other": "fi-asterisk",
             "paper-clip": "fi-paperclip",
             "phone": "fi-telephone",
@@ -7752,7 +7829,10 @@ class ICON(I):
             "radio": "fi-microphone",
             "remove": "fi-x",
             "request": "fi-flag",
+            "responsibility": "fi-sheriff-badge",
             "rss": "fi-rss",
+            "sent": "fi-check",
+            "site": "fi-home",
             "skype": "fi-social-skype",
             "star": "fi-star",
             "table": "fi-list-thumbnails",
@@ -7760,10 +7840,10 @@ class ICON(I):
             "tags": "fi-pricetag-multiple",
             "tasks": "fi-clipboard-notes",
             "time": "fi-clock",
-            "trash": "fi-trash",
             "twitter": "fi-social-twitter",
+            "unsent": "fi-x",
+            "upload": "fi-upload",
             "user": "fi-torso",
-            "wrench": "fi-wrench",
             "zoomin": "fi-zoom-in",
             "zoomout": "fi-zoom-out",
         },

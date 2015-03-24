@@ -101,11 +101,13 @@ def config(settings):
                                 pr_education = PID,
                                 pr_note = PID,
                                 hrm_human_resource = SID,
+                                hrm_training = PID,
                                 inv_recv = SID,
                                 inv_send = SID,
                                 inv_track_item = "track_org_id",
                                 inv_adj_item = "adj_id",
-                                req_req_item = "req_id"
+                                req_req_item = "req_id",
+                                po_household = "area_id",
                                 )
 
         # Default Foreign Keys (ordered by priority)
@@ -168,6 +170,28 @@ def config(settings):
             if otype and otype.name != "Red Cross / Red Crescent":
                 use_user_organisation = True
 
+        elif tablename == "hrm_training":
+            # Inherit realm entity from the related HR record
+            htable = s3db.hrm_human_resource
+            query = (table.id == row.id) & \
+                    (htable.person_id == table.person_id) & \
+                    (htable.deleted != True)
+            rows = db(query).select(htable.realm_entity, limitby=(0, 2))
+            if len(rows) == 1:
+                realm_entity = rows.first().realm_entity
+            else:
+                # Ambiguous => try course organisation
+                ctable = s3db.hrm_course
+                otable = s3db.org_organisation
+                query = (table.id == row.id) & \
+                        (ctable.id == table.course_id) & \
+                        (otable.id == ctable.organisation_id)
+                row = db(query).select(otable.pe_id,
+                                       limitby=(0, 1)).first()
+                if row:
+                    realm_entity = row.pe_id
+                # otherwise: inherit from the person record
+
         # Groups are owned by the user's organisation
         #elif tablename in ("pr_group",):
         elif tablename == "pr_group":
@@ -226,7 +250,7 @@ def config(settings):
     # Default Language
     settings.L10n.default_language = "en-gb"
     # Default timezone for users
-    settings.L10n.utc_offset = "UTC +0700"
+    settings.L10n.utc_offset = "+0700"
     # Number formats (defaults to ISO 31-0)
     # Decimal separator for numbers (defaults to ,)
     settings.L10n.decimal_separator = "."
@@ -286,13 +310,14 @@ def config(settings):
     BRCS = "Bangladesh Red Crescent Society"
     CVTL = "Timor-Leste Red Cross Society (Cruz Vermelha de Timor-Leste)"
     NRCS = "Nepal Red Cross Society"
-    PMI = "Indonesian Red Cross Society (Pelang Merah Indonesia)"
+    PMI = "Indonesian Red Cross Society (Palang Merah Indonesia)"
     PRC = "Philippine Red Cross"
     VNRC = "Viet Nam Red Cross"
     settings.org.dependent_fields = \
         {"pr_person.middle_name"                     : (CVTL, VNRC),
          "pr_person_details.mother_name"             : (BRCS, ),
          "pr_person_details.father_name"             : (ARCS, BRCS),
+         "pr_person_details.grandfather_name"        : (ARCS, ),
          "pr_person_details.affiliations"            : (PRC, ),
          "pr_person_details.company"                 : (PRC, ),
          "vol_details.availability"                  : (VNRC, ),
@@ -489,6 +514,12 @@ def config(settings):
         ("deploy", Storage(
                name_nice = T("Regional Disaster Response Teams"),
                #description = "Alerting and Deployment of Disaster Response Teams",
+               restricted = True,
+               #module_type = 10,
+           )),
+        ("po", Storage(
+               name_nice = T("Population Outreach"),
+               #description = "Population Outreach",
                restricted = True,
                #module_type = 10,
            )),
@@ -706,6 +737,40 @@ def config(settings):
             return {}
 
     # -----------------------------------------------------------------------------
+    # Org-dependent settings
+    # => lazy settings because they require user authentication
+    #
+    def hide_third_gender(default):
+        """ Whether to hide the third person gender """
+
+        root_org = current.auth.root_org_name()
+        if root_org == NRCS:
+            return False
+        return default
+
+    settings.pr.hide_third_gender = hide_third_gender
+
+    def training_instructors(default):
+        """ Whether to track internal/external training instructors """
+
+        root_org = current.auth.root_org_name()
+        if root_org == NRCS:
+            return "both"
+        return default
+
+    settings.hrm.training_instructors = training_instructors
+
+    def location_filter_bulk_select_option(default):
+        """ Whether to show a bulk select option in location filters """
+
+        root_org = current.auth.root_org_name()
+        if root_org == VNRC:
+            return True
+        return default
+
+    settings.ui.location_filter_bulk_select_option = location_filter_bulk_select_option
+
+    # -------------------------------------------------------------------------
     def customise_asset_asset_controller(**attr):
 
         tablename = "asset_asset"
@@ -1253,14 +1318,15 @@ def config(settings):
         # Organisation
         comments = table.organisation_id.represent(record.organisation_id)
 
+        from s3 import s3_unicode
+        from gluon.html import A, DIV, H2, LABEL, P, SPAN
+
         # Add job title if present
         job_title_id = record.job_title_id
         if job_title_id:
             comments = (SPAN("%s, " % \
                              s3_unicode(table.job_title_id.represent(job_title_id))),
                              comments)
-
-        from gluon.html import A, DIV, H2, LABEL, P, SPAN
 
         # Determine the current roster membership status (active/inactive)
         atable = current.s3db.deploy_application
@@ -1317,6 +1383,44 @@ def config(settings):
                    DIV(LABEL(status.label + ": "), roster_status),
                    _class="profile-header",
                    )
+
+    # -----------------------------------------------------------------------------
+    def emergency_contact_represent(row):
+        """
+            Representation of Emergency Contacts (S3Represent label renderer)
+
+            @param row: the row
+        """
+
+        items = [row["pr_contact_emergency.name"]]
+        relationship = row["pr_contact_emergency.relationship"]
+        if relationship:
+            items.append(" (%s)" % relationship)
+        phone_number = row["pr_contact_emergency.phone"]
+        if phone_number:
+            items.append(": %s" % phone_number)
+        return "".join(items)
+
+    # -----------------------------------------------------------------------------
+    def customise_hrm_human_resource_resource(r, tablename):
+        """ Configure hrm_human_resource """
+
+        if r.controller == "vol":
+            T = current.T
+            root_org = current.auth.root_org_name()
+            if root_org == NRCS:
+                # Expose volunteer_type field with these options:
+                types = {"PROGRAMME": T("Programme Volunteer"),
+                         "GOVERNANCE": T("Governance Volunteer"),
+                         }
+                field = current.s3db.vol_details.volunteer_type
+                field.readable = field.writable = True
+                from gluon.validators import IS_EMPTY_OR, IS_IN_SET
+                field.requires = IS_EMPTY_OR(IS_IN_SET(types))
+                from s3 import S3Represent
+                field.represent = S3Represent(options=types)
+
+    settings.customise_hrm_human_resource_resource = customise_hrm_human_resource_resource
 
     # -----------------------------------------------------------------------------
     def customise_hrm_human_resource_controller(**attr):
@@ -1388,10 +1492,29 @@ def config(settings):
                                                           hidden = True,
                                                           ))
 
-            if controller == "deploy":
+            resource = r.resource
+            get_config = resource.get_config
 
-                resource = r.resource
-                get_config = resource.get_config
+            if controller == "vol" and root_org == NRCS:
+                pos = 6
+                # Add volunteer type to list_fields
+                list_fields = get_config("list_fields")
+                list_fields.insert(pos, "details.volunteer_type")
+
+                # Add volunteer type to report options
+                report_options = get_config("report_options")
+                if "details.volunteer_type" not in report_options["rows"]:
+                    report_options["rows"].insert(pos, "details.volunteer_type")
+                if "details.volunteer_type" not in report_options["cols"]:
+                    report_options["cols"].insert(pos, "details.volunteer_type")
+
+                # Add filter widget for volunteer type
+                filter_widgets = s3db.get_config("hrm_human_resource", "filter_widgets")
+                filter_widgets.insert(-1, S3OptionsFilter("details.volunteer_type",
+                                                          hidden = True,
+                                                          ))
+
+            if controller == "deploy":
 
                 # Custom profile widgets for hrm_competency ("skills"):
                 from s3 import FS
@@ -1469,7 +1592,7 @@ def config(settings):
                 del gender_opts[1]
                 append_widget(S3OptionsFilter("person_id$gender",
                                               options = gender_opts,
-                                              cols = 2,
+                                              cols = 3,
                                               hidden = True,
                                               ))
                 # Add Roster status filter
@@ -1484,6 +1607,14 @@ def config(settings):
                                                          "False": T("inactive"),
                                                          },
                                               ))
+
+                # Representation of emergency contacts
+                from s3 import S3Represent
+                field = s3db.pr_contact_emergency.id
+                field.represent = S3Represent(lookup="pr_contact_emergency",
+                                              fields=("name", "relationship", "phone"),
+                                              labels=emergency_contact_represent,
+                                              )
 
                 # Custom list fields for RDRT
                 phone_label = settings.get_ui_label_mobile_phone()
@@ -1507,7 +1638,7 @@ def config(settings):
                                (T("Passport Issuer"), "person_id$passport.ia_name"),
                                (T("Passport Date"), "person_id$passport.valid_from"),
                                (T("Passport Expires"), "person_id$passport.valid_until"),
-                               # @todo: Emergency Contacts
+                               (T("Emergency Contacts"), "person_id$contact_emergency.id"),
                                "person_id$physical_description.blood_type",
                                ]
                 resource.configure(filter_widgets = filters,
@@ -1688,6 +1819,14 @@ def config(settings):
             settings.hrm.vol_active = True
         elif root_org in (CVTL, PMI, PRC):
             settings.hrm.vol_active = vol_active
+        elif root_org == NRCS:
+            # Don't allow creating of Persons here
+            from gluon import DIV
+            T = current.T
+            current.s3db.hrm_training.person_id.comment = \
+                DIV(_class="tooltip",
+                    _title="%s|%s" % (T("Participant"),
+                                      T("Type the first few characters of one of the Participant's names.")))
         elif root_org == VNRC:
             settings.pr.name_format = "%(last_name)s %(middle_name)s %(first_name)s"
             # Remove link to download Template
@@ -2307,14 +2446,22 @@ def config(settings):
                         branches = True,
                         )
                 if method == "record":
-                    # Use default form (legacy)
-                    s3db.clear_config("hrm_human_resource", "crud_form")
+                    if r.controller == "vol" and root_org == NRCS:
+                        from s3 import S3SQLCustomForm
+                        crud_form = S3SQLCustomForm("organisation_id",
+                                                    "details.volunteer_type",
+                                                    "job_title_id",
+                                                    "start_date",
+                                                    "end_date",
+                                                    "status",
+                                                    "comments",
+                                                    )
+                        s3db.configure("hrm_human_resource", crud_form=crud_form)
+                    else:
+                        # Use default form (legacy)
+                        s3db.clear_config("hrm_human_resource", "crud_form")
 
-            if arcs:
-                if not r.component:
-                    s3db.pr_person_details.father_name.label = T("Name of Grandfather")
-
-            elif vnrc:
+            if vnrc:
                 controller = r.controller
                 if not r.component:
                     crud_fields = ["first_name",
@@ -2744,6 +2891,8 @@ def config(settings):
         #5: T("Supplier"),
         9: T("Partner National Society"),
     }
+    # Uncomment this to enable Programmes in projects
+    settings.project.programmes = True
 
     # -----------------------------------------------------------------------------
     def customise_project_project_controller(**attr):
@@ -2784,6 +2933,23 @@ def config(settings):
         # Custom Crud Form
         from s3 import S3SQLCustomForm, S3SQLInlineComponent, S3SQLInlineLink
         s3db = current.s3db
+        if settings.get_project_programmes():
+            # Inject inline link for programmes including AddResourceLink
+            from s3layouts import S3AddResourceLink
+            comment = s3db.project_programme_id.attr.comment
+            comment.vars = {"caller": "link_defaultprogramme",
+                            "prefix": "project",
+                            "parent": "programme_project",
+                            }
+            programme = S3SQLInlineLink("programme",
+                                        label = T("Programme"),
+                                        field = "programme_id",
+                                        multiple = False,
+                                        comment = comment,
+                                        )
+        else:
+            programme = None
+
         crud_form = S3SQLCustomForm(
             "organisation_id",
             "name",
@@ -2792,6 +2958,7 @@ def config(settings):
             "status_id",
             "start_date",
             "end_date",
+            programme,
             #S3SQLInlineComponent(
             #    "location",
             #    label = T("Countries"),
@@ -3002,6 +3169,7 @@ def config(settings):
                                                         ),
                                         "parameter_id",
                                         "value",
+                                        "target_value",
                                         "date",
                                         "end_date",
                                         "comments",
@@ -3111,6 +3279,5 @@ def config(settings):
         r.table.date.requires = r.table.date.requires.other
 
     settings.customise_vulnerability_data_resource = customise_vulnerability_data_resource
-
 
 # END =========================================================================

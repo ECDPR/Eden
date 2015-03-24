@@ -71,7 +71,10 @@ form {
   font-size: 0.8em;
 }
 form .form-row {
-  margin-top: 5px !important;
+  margin-top: 0.325rem !important;
+}
+form .form-row > .columns:first-child {
+  overflow: hidden;
 }
 form .form-row > .columns > label {
   font-weight: bold;
@@ -199,7 +202,7 @@ textarea {
   width: 20rem !important;
 }
 .form-container form table.embeddedComponent {
-  border: 1px solid #DDDDDD;
+  border: 1px solid #dddddd;
 }
 .form-container form table.embeddedComponent td {
   border: none;
@@ -252,6 +255,13 @@ textarea {
 }
 #rheader a.th img {
   height: 60px;
+}
+#rheader table {
+  margin-bottom: 10px;
+  border: none;
+}
+#rheader table tr {
+  background: none;
 }
 
 /* RHeader Tabs */
@@ -699,20 +709,44 @@ input.date.hasDatepicker {
 }
 
 /* pr_Contacts widgets */
-.pr-contacts-wrapper .pr-contact,
-.pr-contacts-wrapper .pr-emergency-contact {
+.pr-contacts-wrapper h3 {
+  margin-top: 0.5rem;
+  padding-bottom: 0 !important;
+}
+
+.pr-contact-actions {
+  margin-bottom: 0.5rem;
+}
+
+.pr-contact,
+.pr-emergency-contact {
   padding: 0.5rem;
 }
 
-.pr-contacts h3 {
-  padding-bottom: 0 !important;
+.pr-contact-priority,
+.pr-contact-details {
+  display: inline-block;
 }
-.pr-contacts .pr-contact-subtitle {
+
+.pr-contact-subtitle {
   font-size: 0.8rem;
   font-style: italic;
 }
-.pr-contacts .pr-contact-actions {
-  margin-bottom: 0.5rem;
+
+.pr-contact-priority {
+  border: thin solid #2ba6cb;
+  border-radius: 2px;
+  color: #2ba6cb;
+  font-size: 0.8rem;
+  line-height: 1rem;
+  margin: 0.25rem 1rem 0 0;
+  padding: 0 0.25rem 0.125rem;
+  vertical-align: top;
+}
+.pr-contact-priority input[type=submit] {
+  color: black;
+  line-height: 1.2rem;
+  font-size: 0.8rem;
 }
 
 /* Data Lists */

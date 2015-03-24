@@ -93,6 +93,25 @@ class S3Config(Storage):
                     "zh-tw": "%Y/%m/%d",
                     }
 
+    # PDF fonts for each language
+    # fontset format -> [normal-version, bold-version]
+    # defaults to ["Helvetica", "Helvetica-Bold"] if not-specified here
+    # Requires installation of appropriate font - e.g. using import_font in tasks.cfg
+    # Unifont can be downloaded from http://unifoundry.com/pub/unifont-7.0.06/font-builds/unifont-7.0.06.ttf
+    fonts = {"ar": ["unifont", "unifont"],
+             "km": ["unifont", "unifont"],
+             "ko": ["unifont", "unifont"],
+             "mn": ["unifont", "unifont"],
+             "ne": ["unifont", "unifont"],
+             "prs": ["unifont", "unifont"],
+             "ps": ["unifont", "unifont"],
+             #"th": ["unifont", "unifont"],
+             "tr": ["unifont", "unifont"],
+             "vi": ["unifont", "unifont"],
+             "zh-cn": ["unifont", "unifont"],
+             "zh-tw": ["unifont", "unifont"],
+             }
+
     def __init__(self):
         self.asset = Storage()
         self.auth = Storage()
@@ -1309,7 +1328,7 @@ class S3Config(Storage):
                            )
 
     def get_L10n_utc_offset(self):
-        return self.L10n.get("utc_offset", "UTC +0000")
+        return self.L10n.get("utc_offset", "+0000")
 
     def get_L10n_firstDOW(self):
         return self.L10n.get("firstDOW", 1)
@@ -1392,8 +1411,13 @@ class S3Config(Storage):
     # PDF settings
     def get_paper_size(self):
         return self.base.get("paper_size", "A4")
+
     def get_pdf_logo(self):
         return self.ui.get("pdf_logo", None)
+
+    def get_pdf_export_font(self):
+        language = current.session.s3.language
+        return self.fonts.get(language, None)
 
     # Optical Character Recognition (OCR)
     def get_pdf_excluded_fields(self, resourcename):
@@ -1773,6 +1797,27 @@ class S3Config(Storage):
                                                    icons = False,
                                                    stripes = True,
                                                    ))
+
+    def get_ui_hierarchy_cascade_option_in_tree(self):
+        """
+            Whether hierarchy widgets show a "Select All" option in
+            the tree (True) or as context menu of the parent node.
+        """
+        return self.ui.get("hierarchy_cascade_option_in_tree", True)
+
+    def get_ui_hierarchy_filter_bulk_select_option(self):
+        """
+            Whether or not to show a bulk-select option in hierarchical
+            filter widgets (overrides per-widget setting)
+        """
+        return self.ui.get("hierarchy_filter_bulk_select_option", None)
+
+    def get_ui_location_filter_bulk_select_option(self):
+        """
+            Whether or not to show a bulk-select option in location
+            filter widgets (overrides per-widget setting)
+        """
+        return self.__lazy(self.ui, "location_filter_bulk_select_option", None)
 
     def get_ui_inline_component_layout(self):
         """
@@ -2329,6 +2374,13 @@ class S3Config(Storage):
         """
         return self.hrm.get("org_required", True)
 
+    def get_hrm_multiple_orgs(self):
+        """
+            True: Human Resources are being managed across multiple Organisations
+            False: Human Resources are only being manage internally within a single Organisation with no Branches
+        """
+        return self.hrm.get("multiple_orgs", True)
+
     def get_hrm_compose_button(self):
         """
             If set to True then HRM dataTables have a 'Send Message' button
@@ -2503,6 +2555,14 @@ class S3Config(Storage):
             Whether Human Resources should use Trainings
         """
         return self.hrm.get("use_trainings", True)
+
+    def get_hrm_training_instructors(self):
+        """
+            Whether to track "internal" training instructors (=persons
+            from the registry), or "external" (=just names), or "both",
+            ...or None (=don't track instructors at all)
+        """
+        return self.__lazy(self.hrm, "training_instructors", "external")
 
     def get_hrm_activity_types(self):
         """
@@ -2815,6 +2875,9 @@ class S3Config(Storage):
                 else:
                     root_org = auth.root_org_name()
                     enabled = root_org in org_name_list
+            else:
+                # Enable if empty list
+                enabled = True
 
         if enable_field:
             field = current.s3db[tablename][fieldname]
@@ -2858,6 +2921,12 @@ class S3Config(Storage):
             else:
                 group = "60+"
         return group
+
+    def get_pr_hide_third_gender(self):
+        """
+            Whether to hide the third gender ("Other")
+        """
+        return self.__lazy(self.pr, "hide_third_gender", default=True)
 
     def get_pr_import_update_requires_email(self):
         """
@@ -3014,6 +3083,12 @@ class S3Config(Storage):
             Use Sectors in Projects
         """
         return self.project.get("sectors", True)
+
+    def get_project_programmes(self):
+        """
+            Use Programmes in Projects
+        """
+        return self.project.get("programmes", False)
 
     def get_project_themes(self):
         """
@@ -3407,5 +3482,32 @@ class S3Config(Storage):
         elif default:
             append("template:default")
         return result
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def __lazy(subset, key, default=None):
+        """
+            Resolve a "lazy" setting: when the config setting is callable,
+            call it once and store the result. A callable setting takes
+            the default value as parameter.
+
+            This method allows settings to depend on user authentication
+            (e.g. org-dependent variations), or involve database lookups,
+            which is only possible /after/ the initial config.py run.
+
+            Normal pattern:
+                return self.<subset>.get(key, default)
+
+            Lazy pattern:
+                return self.__lazy(self.<subset>, key, default)
+
+            @param subset: the subset of settings
+            @param key: the setting name
+            @param default: the default value
+        """
+        setting = subset.get(key, default)
+        if callable(setting):
+            setting = subset[key] = setting(default)
+        return setting
 
 # END =========================================================================

@@ -10,6 +10,7 @@
          Project Code.........string..........Project Code (need code or name)
          Project Name.........string..........Project Name
          Project Comments.....string..........Project comments
+         Programme............string..........Project Programme
          Status...............string..........Project status
          Lead Organisation....string..........Organisation name
          Donor Organisations..comma-sep list..Organisation name
@@ -32,16 +33,22 @@
                                               as "FirstName,LastName,Email,MobilePhone",
                                               where first name and email as well as the
                                               three commas are mandatory
-         Beneficiaries:XXX....integer.........Number of Beneficiaries of type XXX (multiple allowed)
+         Beneficiaries:XXX...........integer..Number of Beneficiaries of type XXX (multiple allowed)
+         TargetedBeneficiaries:XXX...integer..Targeted Number of Beneficiaries of type XXX
+
+         Alternatively, Beneficiaries:XXX can be like "<actual_number>/<targeted_number>"
 
     *********************************************************************** -->
+
+    <xsl:import href="beneficiary.xsl"/>
+    <xsl:import href="programme.xsl"/>
 
     <xsl:output method="xml"/>
 
     <xsl:include href="../../xml/commons.xsl"/>
     <xsl:include href="../../xml/countries.xsl"/>
 
-    <xsl:variable name="ActivityTypePrefix" select="'ActivityType: '"/>
+    <xsl:variable name="ActivityTypePrefix" select="'ActivityType:'"/>
     <xsl:variable name="SectorPrefix" select="'Sector:'"/>
 
     <xsl:key name="orgs"
@@ -50,6 +57,7 @@
 
     <xsl:key name="projects" match="row" use="concat(col[@field='Project Name'],
                                                      col[@field='Project Code'])"/>
+    <xsl:key name="programmes" match="row" use="col[@field='Programme']"/>
     <xsl:key name="statuses"
              match="row"
              use="col[@field='Status']"/>
@@ -80,6 +88,15 @@
                                                                    concat(col[@field='Project Name'],
                                                                           col[@field='Project Code']))[1])]">
                 <xsl:call-template name="Project"/>
+            </xsl:for-each>
+
+            <!-- Programmes -->
+            <xsl:for-each select="//row[generate-id(.)=
+                                        generate-id(key('programmes',
+                                                        col[@field='Programme'])[1])]">
+                <xsl:call-template name="Programme">
+                    <xsl:with-param name="Field">Programme</xsl:with-param>
+                </xsl:call-template>
             </xsl:for-each>
 
             <!-- Beneficiary Types -->
@@ -168,6 +185,10 @@
             <xsl:if test="col[@field='Budget']!=''">
                 <data field="budget"><xsl:value-of select="col[@field='Budget']"/></data>
             </xsl:if>
+
+            <!-- Programme -->
+            <xsl:call-template name="ProgrammeLink"/>
+
             <!-- Project Sectors -->
             <xsl:call-template name="splitList">
                 <xsl:with-param name="list">
@@ -176,6 +197,7 @@
                 <xsl:with-param name="listsep" select="';'"/>
                 <xsl:with-param name="arg">sector_ref</xsl:with-param>
             </xsl:call-template>
+
             <!-- Project Organisations -->
             <xsl:if test="$OrgName!=''">
                 <!-- Embedded within record -->
@@ -195,6 +217,7 @@
                     </reference>
                 </resource>
             </xsl:if>
+
             <xsl:if test="col[@field='Donor Organisations']!=''">
                 <xsl:call-template name="splitList">
                     <xsl:with-param name="list">
@@ -203,6 +226,7 @@
                     <xsl:with-param name="arg">donor</xsl:with-param>
                 </xsl:call-template>
             </xsl:if>
+
             <xsl:if test="col[@field='Partner Organisations']!=''">
                 <xsl:call-template name="splitList">
                     <xsl:with-param name="list">
@@ -211,6 +235,7 @@
                     <xsl:with-param name="arg">partner</xsl:with-param>
                 </xsl:call-template>
             </xsl:if>
+
         </resource>
 
         <xsl:call-template name="splitList">
@@ -329,38 +354,6 @@
 
         <resource name="project_status">
             <data field="name"><xsl:value-of select="$Status"/></data>
-        </resource>
-
-    </xsl:template>
-
-    <!-- ****************************************************************** -->
-    <xsl:template name="Beneficiaries">
-
-        <xsl:variable name="BeneficiaryType" select="normalize-space(substring-after(@field, ':'))"/>
-        <xsl:variable name="BeneficiaryNumber" select="text()"/>
-
-        <xsl:if test="$BeneficiaryNumber!=''">
-            <resource name="project_beneficiary">
-                <reference field="parameter_id" resource="project_beneficiary_type">
-                    <xsl:attribute name="tuid">
-                        <xsl:value-of select="concat('BNF:', $BeneficiaryType)"/>
-                    </xsl:attribute>
-                </reference>
-                <data field="value"><xsl:value-of select="$BeneficiaryNumber"/></data>
-            </resource>
-        </xsl:if>
-
-    </xsl:template>
-
-    <!-- ****************************************************************** -->
-    <xsl:template name="BeneficiaryType">
-        <xsl:variable name="BeneficiaryType" select="normalize-space(substring-after(@field, ':'))"/>
-
-        <resource name="project_beneficiary_type">
-            <xsl:attribute name="tuid">
-                <xsl:value-of select="concat('BNF:', $BeneficiaryType)"/>
-            </xsl:attribute>
-            <data field="name"><xsl:value-of select="$BeneficiaryType"/></data>
         </resource>
 
     </xsl:template>
